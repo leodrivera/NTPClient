@@ -15,24 +15,10 @@ struct DateLanguageData {
     const char* longMonths[12];
 };
 
-const DateLanguageData EnglishData = {
-    {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"},
-    {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
-    {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"},
-    {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
-};
-
-const DateLanguageData PortugueseData = {
-    {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"},
-    {"Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"},
-    {"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"},
-    {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"}
-};
-
 class NTPClient {
   private:
     UDP*          _udp;
-    String        _dateLanguage = "en"; // Default language
+    String        _dateLanguage   = "en"; // Default language
     const char*   _poolServerName = "pool.ntp.org"; // Default time server
     IPAddress     _poolServerIP;
     unsigned int  _port           = NTP_DEFAULT_LOCAL_PORT;
@@ -103,42 +89,62 @@ class NTPClient {
      * @return time in seconds since Jan. 1, 1970
      */
     unsigned long getEpochTime() const;
-    int getDayOfWeek() const;
     int getHours() const;
     int getMinutes() const;
     int getSeconds() const;
     int getDay() const;
+    int getDayOfWeek() const;
     int getMonth() const;
     int getYear() const;
-    
+
     // Get formatted date and time
+    /**
+     * @return Date Time string formatted. The available format codes are:
+      %Y: Full year (e.g., 2023)
+      %y: Last two digits of the year (e.g., 23 for 2023)
+      %m: Month as a zero-padded decimal number (01 to 12)
+      %d: Day of the month as a zero-padded decimal number (01 to 31)
+      %H: Hour (00 to 23) as a zero-padded decimal number
+      %M: Minute as a zero-padded decimal number (00 to 59)
+      %S: Second as a zero-padded decimal number (00 to 59)
+      %a: Abbreviated weekday name according to the current locale
+      %A: Full weekday name according to the current locale
+      %w: Weekday as a decimal number (0 for Sunday through 6 for Saturday)
+      %b: Abbreviated month name according to the current locale
+      %B: Full month name according to the current locale
+      %p: "AM" or "PM" based on the hour (Note: This is locale-sensitive and might not be applicable in all languages)
+     */
     String getFormattedDateTime(const String &format);
-    
-    // Setters components
+
     /**
      * Changes the time offset. Useful for changing timezones dynamically
      */
     void setTimeOffset(int timeOffset);
+
     /**
      * Set the update interval to another frequency. E.g. useful when the
      * timeOffset should not be set in the constructor
      */
     void setUpdateInterval(unsigned long updateInterval);
+
     /**
      * Set time server name
      *
      * @param poolServerName
      */
     void setPoolServerName(const char* poolServerName);
+
+     /**
+     * Set language for displaying date. Available languages are 'pt', 'es' and 'en' (default)
+     * @param dateLanguage
+     */
+    void setDateLanguage(const String &dateLanguage);
+
      /**
      * Set random local port
      */
-    void setDateLanguage(const String &dateLanguage);
-     /**
-     * Set language for displaying date
-     */
     void setRandomPort(unsigned int minValue = 49152, unsigned int maxValue = 65535);
-     
+
     /**
      * Stops the underlying UDP client
      */

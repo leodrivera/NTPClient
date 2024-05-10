@@ -21,12 +21,34 @@
 
 #include "NTPClient.h"
 
+const DateLanguageData EnglishData = {
+    {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"},
+    {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
+    {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"},
+    {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
+};
+
+const DateLanguageData SpanishData = {
+    {"Dom", "Lun", "Mart", "Miérc", "Juev", "Vier", "Sáb"},
+    {"Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"},
+    {"ene", "feb", "mar", "abr", "mayo", "jun", "jul", "ago", "sept", "oct", "nov", "dic"},
+    {"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"}
+};
+
+const DateLanguageData PortugueseData = {
+    {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"},
+    {"Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"},
+    {"jan", "fev", "mar", "abr", "maio", "jun", "jul", "ago", "set", "out", "nov", "dez"},
+    {"janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"}
+};
+
 // Language map definition
 const struct LanguageMap {
     const char* code;
     const DateLanguageData* data;
 } languageMap[] = {
     {"en", &EnglishData},
+    {"es", &SpanishData},
     {"pt", &PortugueseData}
     // Add new languages here
 };
@@ -339,7 +361,7 @@ String NTPClient::getFormattedDateTime(const String& format) {
         }
 
         if (escape) {
-            switch (c) {                
+            switch (c) {
                 case 'Y': result += String(this->getYear()); break;
                 case 'y': result += String(this->getYear()).substring(2); break;
                 case 'm': result += (this->getMonth() < 10 ? "0" : "") + String(this->getMonth()); break;
@@ -378,7 +400,7 @@ void NTPClient::setUpdateInterval(unsigned long updateInterval) {
 }
 
 void NTPClient::setPoolServerName(const char* poolServerName) {
-    this->_poolServerName = poolServerName;
+  this->_poolServerName = poolServerName;
 }
 
 void NTPClient::setDateLanguage(const String &dateLanguage) {
