@@ -7,12 +7,15 @@
 #define SEVENZYYEARS 2208988800UL
 #define NTP_PACKET_SIZE 48
 #define NTP_DEFAULT_LOCAL_PORT 1337
+#define REQUEST_TIMEOUT 1000UL
+#define MAX_REQUEST_DELAY 30000UL
 
 #define DEBUG_NTPClient
 
 class NTPClient {
   private:
     UDP*          _udp;
+    bool          _udpSetup       = false;
     String        _dateLanguage   = "en"; // Default language
     const char*   _poolServerName = "pool.ntp.org"; // Default time server
     IPAddress     _poolServerIP;
@@ -24,6 +27,8 @@ class NTPClient {
     unsigned long _currentEpoc    = 0;      // In s
     unsigned long _lastUpdate     = 0;      // In ms
     unsigned long _lastRequest    = 0;      // In ms
+    unsigned long _requestSent    = 0;      // in ms (when the last request was sent)
+    unsigned long _requestDelay   = 1;      // in ms (a cumulative delay to slow down constant failures)
 
     enum class State {
         uninitialized,
@@ -32,9 +37,10 @@ class NTPClient {
         wait_response,
     } _state = State::uninitialized;
 
-    byte          _packetBuffer[NTP_PACKET_SIZE];
+    byte _packetBuffer[NTP_PACKET_SIZE];
 
-    void          sendNTPPacket();
+    void sendNTPPacket();
+    void processNTPReply();
 
     struct DateLanguageData {
         const char* shortWeekDays[7];
@@ -78,7 +84,6 @@ class NTPClient {
     NTPClient(UDP& udp, IPAddress poolServerIP);
     NTPClient(UDP& udp, IPAddress poolServerIP, long timeOffset);
     NTPClient(UDP& udp, IPAddress poolServerIP, long timeOffset, unsigned long updateInterval);
-
 
     /**
      * Starts the underlying UDP client with the default local port
@@ -167,11 +172,6 @@ class NTPClient {
      * @param dateLanguage
      */
     void setDateLanguage(const String &dateLanguage);
-
-     /**
-     * Set random local port
-     */
-    void setRandomPort(unsigned int minValue = 49152, unsigned int maxValue = 65535);
 
     /**
      * Stops the underlying UDP client

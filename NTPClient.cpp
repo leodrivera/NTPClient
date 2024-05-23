@@ -96,116 +96,100 @@ void NTPClient::begin() {
 
 void NTPClient::begin(unsigned int port) {
   this->_port = port;
-  this->_state = State::uninitialized;
+  this->_udp->begin(this->_port);
+  this->_udpSetup = true;
+}
+
+bool NTPClient::forceUpdate() {
+  this->_lastUpdate = 0;
+  this->_requestSent = 0;
+  this->_requestDelay = 1;
+  return true;
 }
 
 bool NTPClient::update() {
-  switch (this->_state) {
-    case State::uninitialized:
-      this->_udp->begin(this->_port);
-      this->_state = State::idle;
+  unsigned long now = millis();
 
-      // fall through -- we're all initialized now
+  if (!this->_udpSetup) {
+    this->begin();
+  }
 
-    case State::idle:
-      if ((millis() - this->_lastUpdate < this->_updateInterval)     // Update after _updateInterval
-          && this->_lastUpdate != 0)                                 // Update if there was no update yet.
-        return false;
+  // Check if an update is due
+  if (this->_lastUpdate > 0 && now < this->_lastUpdate + this->_updateInterval) {
+    return false; // Update not due yet
+  }
 
-      this->_state = State::send_request;
-
-      // fall through -- ready to send request now
-
-    case State::send_request:
-#ifdef DEBUG_NTPClient
-      Serial.println(F("Sending NTP request"));
-#endif
-
-      // flush any existing packets
-      while(this->_udp->parsePacket() != 0)
+  // Check if a request has been sent and timed out, or if no request has been sent yet
+  if (this->_requestSent == 0 || now > this->_requestSent + this->_requestDelay + REQUEST_TIMEOUT) {
+    // If a request was already sent, increase the delay to avoid hammering the NTP server
+    if (this->_requestSent > 0) {
+      this->_requestDelay *= 2;
+      if (this->_requestDelay > MAX_REQUEST_DELAY) {
+        this->_requestDelay = MAX_REQUEST_DELAY;
+      }
+    } else {
+      // First time sending a request, purge any old packets
+      while (this->_udp->parsePacket() != 0) {
         this->_udp->flush();
-
-      this->sendNTPPacket();
-
-      this->_lastRequest = millis();
-      this->_state = State::wait_response;
-
-      // fall through -- if we're lucky we may already receive a response
-
-    case State::wait_response:
-      if (!this->_udp->parsePacket()) {
-        // no reply yet
-        if (millis() - this->_lastRequest >= 1000) {
-          // time out
-#ifdef DEBUG_NTPClient
-          Serial.println(F("NTP reply timeout"));
-#endif
-          this->_state = State::idle;
-        }
-        return false;
       }
+    }
 
+    // Send an NTP packet
+    this->sendNTPPacket();
 #ifdef DEBUG_NTPClient
-      Serial.println(F("NTP reply received"));
+    Serial.printf("Sending an NTP packet (timeout=%i)!\n", this->_requestDelay + REQUEST_TIMEOUT);
 #endif
+    this->_requestSent = now; // Remember when the request was sent
+  }
 
-      // got a reply!
-      this->_lastUpdate = this->_lastRequest;
-      this->_udp->read(this->_packetBuffer, NTP_PACKET_SIZE);
-
-      {
-        unsigned long highWord = word(this->_packetBuffer[40], this->_packetBuffer[41]);
-        unsigned long lowWord = word(this->_packetBuffer[42], this->_packetBuffer[43]);
-        // combine the four bytes (two words) into a long integer
-        // this is NTP time (seconds since Jan 1 1900):
-        unsigned long secsSince1900 = highWord << 16 | lowWord;
-        this->_currentEpoc = secsSince1900 - SEVENZYYEARS;
-      }
-
-      return true;  // return true after successful update
-
-    default:
-      this->_state = State::uninitialized;
+  // Check for any replies
+  int packetLength = this->_udp->parsePacket();
+  if (packetLength > 0) {
+    this->processNTPReply();
+    this->_requestSent = 0;
+    this->_requestDelay = 1;
+    this->_lastUpdate = now;
+    return true;
   }
 
   return false;
 }
 
-bool NTPClient::forceUpdate() {
-  // In contrast to NTPClient::update(), this function always sends a NTP
-  // request and only returns when the whole operation completes (no matter
-  // if it's a success or a failure because of a timeout).  In other words
-  // this function is fully synchronous.  It will block until the whole
-  // NTP operation completes.
-  //
-  // We could only make this function switch the state to State::send_request
-  // to ensure a NTP request would happen with the next call to
-  // NTPClient::update().  However, this would be an API change, users could
-  // expect synchronous behaviour and even skip the calls to NTPClient::update()
-  // completely relying only on this function for time updates.
+void NTPClient::processNTPReply() {
+  Serial.println("Got an NTP reply!");
+  this->_udp->read(this->_packetBuffer, NTP_PACKET_SIZE);
+  this->_udp->flush();
 
-  // ensure we're initialized
-  if (this->_state == State::uninitialized) {
-    this->_udp->begin(this->_port);
+  unsigned long highWord = word(this->_packetBuffer[40], this->_packetBuffer[41]);
+  unsigned long lowWord = word(this->_packetBuffer[42], this->_packetBuffer[43]);
+  unsigned long secsSince1900 = highWord << 16 | lowWord;
+
+  this->_currentEpoc = secsSince1900 - SEVENZYYEARS;
+}
+
+void NTPClient::sendNTPPacket() {
+  // set all bytes in the buffer to 0
+  memset(this->_packetBuffer, 0, NTP_PACKET_SIZE);
+  // Initialize values needed to form NTP request
+  this->_packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  this->_packetBuffer[1] = 0;     // Stratum, or type of clock
+  this->_packetBuffer[2] = 6;     // Polling Interval
+  this->_packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  this->_packetBuffer[12]  = 49;
+  this->_packetBuffer[13]  = 0x4E;
+  this->_packetBuffer[14]  = 49;
+  this->_packetBuffer[15]  = 52;
+
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:
+  if  (this->_poolServerName) {
+    this->_udp->beginPacket(this->_poolServerName, 123);
+  } else {
+    this->_udp->beginPacket(this->_poolServerIP, 123);
   }
-
-  // At this point we can be in any state except for State::uninitialized.
-  // Let's ignore that and switch right to State::send_request to send a
-  // fresh NTP request.
-  this->_state = State::send_request;
-
-  while (true) {
-    if (this->update()) {
-      // time updated
-      return true;
-    } else if (this->_state != State::idle) {
-      // still waiting for response
-      delay(10);
-    } else {
-      // failure
-      return false;
-    }
-  }
+  this->_udp->write(this->_packetBuffer, NTP_PACKET_SIZE);
+  this->_udp->endPacket();
 }
 
 // Function to find language data by code
@@ -355,37 +339,4 @@ void NTPClient::setPoolServerName(const char* poolServerName) {
 
 void NTPClient::setDateLanguage(const String &dateLanguage) {
   this->_dateLanguage = dateLanguage;
-}
-
-void NTPClient::sendNTPPacket() {
-  // set all bytes in the buffer to 0
-  memset(this->_packetBuffer, 0, NTP_PACKET_SIZE);
-  // Initialize values needed to form NTP request
-  this->_packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-  this->_packetBuffer[1] = 0;     // Stratum, or type of clock
-  this->_packetBuffer[2] = 6;     // Polling Interval
-  this->_packetBuffer[3] = 0xEC;  // Peer Clock Precision
-  // 8 bytes of zero for Root Delay & Root Dispersion
-  this->_packetBuffer[12]  = 49;
-  this->_packetBuffer[13]  = 0x4E;
-  this->_packetBuffer[14]  = 49;
-  this->_packetBuffer[15]  = 52;
-
-  // all NTP fields have been given values, now
-  // you can send a packet requesting a timestamp:
-  if  (this->_poolServerName) {
-    this->_udp->beginPacket(this->_poolServerName, 123);
-  } else {
-    this->_udp->beginPacket(this->_poolServerIP, 123);
-  }
-  this->_udp->write(this->_packetBuffer, NTP_PACKET_SIZE);
-  this->_udp->endPacket();
-}
-
-void NTPClient::setRandomPort(unsigned int minValue, unsigned int maxValue) {
-  randomSeed(analogRead(0));
-  this->_port = random(minValue, maxValue);
-
-  // we've set a new port, remember to reinitialize UDP next time
-  this->_state = State::uninitialized;
 }
